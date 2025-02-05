@@ -6,10 +6,13 @@ import {
   Param,
   Inject,
   Query,
+  ParseUUIDPipe,
+  Patch,
 } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { ORDER_SERVICE } from 'src/config';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, OrderPaginationDto, StatusDto } from './dto';
+import { catchError } from 'rxjs';
 import { PaginationDto } from 'src/common';
 
 @Controller('orders')
@@ -24,12 +27,51 @@ export class OrdersController {
   }
 
   @Get()
-  findAllOrders(@Query() paginationDto: PaginationDto) {
-    return this.ordersClient.send({ cmd: 'find_all_orders' }, {});
+  findAllOrders(@Query() orderPaginationDto: OrderPaginationDto) {
+    return this.ordersClient.send(
+      { cmd: 'find_all_orders' },
+      orderPaginationDto,
+    );
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ordersClient.send({ cmd: 'find_one_order' }, { id });
+  @Get('id/:id')
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordersClient.send({ cmd: 'find_one_order' }, { id }).pipe(
+      catchError((err) => {
+        throw new RpcException(err);
+      }),
+    );
+  }
+
+  @Get(':status')
+  //Alternative  findAll with pagination: .../api/orders/DELIVERED?page=1&limit=2
+  findAllByStatus(
+    @Param() statusDto: StatusDto,
+    @Query() paginationDto: PaginationDto,
+  ) {
+    return this.ordersClient
+      .send(
+        { cmd: 'find_all_orders' },
+        { ...paginationDto, status: statusDto.status },
+      )
+      .pipe(
+        catchError((err) => {
+          throw new RpcException(err);
+        }),
+      );
+  }
+
+  @Patch(':id')
+  changeStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() statusDto: StatusDto,
+  ) {
+    return this.ordersClient
+      .send({ cmd: 'change_order_status' }, { id, status: statusDto.status })
+      .pipe(
+        catchError((err) => {
+          throw new RpcException(err);
+        }),
+      );
   }
 }
